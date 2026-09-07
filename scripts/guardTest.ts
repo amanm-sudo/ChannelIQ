@@ -38,6 +38,7 @@ import {
   writeStrategy,
   writeStrategyDeterministic,
 } from "../lib/agents/strategyWriter";
+import { tokenize } from "../lib/agents/patternAnalyzer";
 import { summariseTraits } from "../lib/agents/thumbnailAgent";
 import { findWhitespace } from "../lib/agents/whitespaceAgent";
 import type {
@@ -99,6 +100,17 @@ function testParser() {
     { text: "a 4.35% like rate", expect: [["4.35%", 4.35]] },
     { text: "no numbers at all here", expect: [] },
   ];
+
+  // Hashtags and mentions must never survive tokenisation. Against a real
+  // channel this produced the recommendation to make videos about
+  // "#ashusir #scienceandfun" — a competitor's own branding hashtags — graded
+  // high confidence.
+  const branding = tokenize("Aap kar paate ? | Science Experiment #ashusir #scienceandfun @somechannel");
+  check(
+    "tokenizer strips hashtags and mentions",
+    !branding.some((t) => /ashusir|scienceandfun|somechannel/.test(t)),
+    branding.join(" "),
+  );
 
   for (const c of cases) {
     const got = extractNumbers(c.text);

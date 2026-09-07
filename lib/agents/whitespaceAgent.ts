@@ -230,11 +230,30 @@ export async function findWhitespace(
     .filter(Boolean);
 
   const rejectedAsUnrelated: string[] = [];
+  const rejectedAsSmaller: string[] = [];
   const adjacent = loaded.filter(({ summary, videos }) => {
     // User-named competitors are trusted: they know their niche better than a
     // keyword search does, and second-guessing them would be obnoxious.
     const userNamed = (options.competitorInputs ?? []).length > 0;
     if (userNamed) return true;
+
+    /*
+     * An auto-suggested channel must actually be OUT-PERFORMING us.
+     *
+     * The whole premise of this feature is "topics working for the creators
+     * beating you". A channel whose median is below ours is not beating us, so
+     * its topics are not opportunities — and its best topic can still clear the
+     * per-gap 1.3x test on a single outlier, which is how a channel with 0.91x
+     * our median ended up supplying three "gap opportunities" to a channel it
+     * under-performs.
+     *
+     * Only applied to auto-suggested channels. If the user names a smaller
+     * competitor deliberately, that is a legitimate thing to want.
+     */
+    if (summary.viewRatio > 0 && summary.viewRatio < 1.15) {
+      rejectedAsSmaller.push(summary.title);
+      return false;
+    }
 
     const theirTerms = termIndex(videos);
     const shared = new Set(ourTopicKeywords.filter((kw) => (theirTerms.get(kw)?.length ?? 0) >= 2));
@@ -249,6 +268,21 @@ export async function findWhitespace(
   });
 
   if (adjacent.length === 0) {
+    // State the ACTUAL reason each channel was dropped. An earlier version
+    // always blamed topic overlap, which was simply untrue when the real reason
+    // was that the channel was not out-performing this one.
+    const reasons: string[] = [];
+    if (rejectedAsUnrelated.length > 0) {
+      reasons.push(
+        `${rejectedAsUnrelated.join(", ")} do${rejectedAsUnrelated.length === 1 ? "es" : ""} not cover any subject this channel covers`,
+      );
+    }
+    if (rejectedAsSmaller.length > 0) {
+      reasons.push(
+        `${rejectedAsSmaller.join(", ")} ${rejectedAsSmaller.length === 1 ? "is" : "are"} not out-performing this channel`,
+      );
+    }
+
     return {
       ...EMPTY,
       attempted: true,
@@ -256,8 +290,8 @@ export async function findWhitespace(
       competitors: loaded.map((l) => l.summary),
       quotaUnits: (options.meter?.units ?? 0) - quotaBefore,
       note:
-        rejectedAsUnrelated.length > 0
-          ? `Scanned ${loaded.length} channel${loaded.length === 1 ? "" : "s"} but none of them cover a subject this channel covers, so comparing against them would produce noise rather than opportunities. Name competitors explicitly for a useful whitespace scan.`
+        reasons.length > 0
+          ? `Scanned ${loaded.length} channel${loaded.length === 1 ? "" : "s"} and used none of them: ${reasons.join("; ")}. Comparing against them would produce noise rather than opportunities — name competitors explicitly for a useful whitespace scan.`
           : "No comparable channels could be identified for this niche.",
     };
   }
@@ -287,12 +321,20 @@ export async function findWhitespace(
       ...tokenize(summary.title),
       ...tokenize(summary.handle ?? ""),
     ]);
+    // Also match the name with spacing removed, because channels tag themselves
+    // as one word: "Science and fun" brands itself "scienceandfun", which shares
+    // no token with its own title and so slipped past the word-level check.
+    const selfCollapsed = [summary.title, summary.handle ?? ""]
+      .map((s) => s.toLowerCase().replace(/[^a-z0-9]/g, ""))
+      .filter((s) => s.length >= 5);
 
     for (const [term, indices] of theirTerms) {
       if (indices.length < minDocs || indices.length > maxDocs) continue;
 
       // Skip anything built entirely out of the competitor's own name.
       if (term.split(" ").every((w) => selfWords.has(w))) continue;
+      const termCollapsed = term.replace(/[^a-z0-9]/g, "");
+      if (selfCollapsed.some((n) => termCollapsed.includes(n) || n.includes(termCollapsed))) continue;
 
       // Coverage test: have we made this video already?
       if (ourCoverage(ourTerms, term) > 1) continue;
@@ -358,6 +400,7 @@ export async function findWhitespace(
   // more than one competitor) so the report shows distinct opportunities.
   const gaps: GapOpportunity[] = [];
   const claimedVideoIds = new Set<string>();
+  const claimedTopics = new Set<string>();
 
   for (const g of raw) {
     if (gaps.length >= 4) break;
@@ -381,6 +424,13 @@ export async function findWhitespace(
     const displayTerm = [...new Set(siblings.map((s) => s.term))].sort(
       (a, b) => b.split(" ").length - a.split(" ").length || b.length - a.length,
     )[0];
+
+    // Two different term sets can collapse to the same display label. Video
+    // overlap alone did not catch it: a real run listed the identical topic
+    // twice, with different numbers, which reads as a bug even when both rows
+    // are individually correct.
+    if (claimedTopics.has(displayTerm)) continue;
+    claimedTopics.add(displayTerm);
     const allVideos = [...new Map(siblings.flatMap((s) => s.videos).map((v) => [v.id, v])).values()];
     const competitorTitles = [...new Set(siblings.map((s) => s.competitor.title))];
 
@@ -448,6 +498,11 @@ export async function findWhitespace(
   if (rejectedAsUnrelated.length > 0) {
     notes.push(
       `Excluded ${rejectedAsUnrelated.join(", ")} from the comparison — ${rejectedAsUnrelated.length === 1 ? "it does" : "they do"} not cover any subject this channel covers, so ${rejectedAsUnrelated.length === 1 ? "it is" : "they are"} not a useful benchmark.`,
+    );
+  }
+  if (rejectedAsSmaller.length > 0) {
+    notes.push(
+      `Excluded ${rejectedAsSmaller.join(", ")} — ${rejectedAsSmaller.length === 1 ? "its median is" : "their medians are"} at or below this channel's, so ${rejectedAsSmaller.length === 1 ? "it is not" : "they are not"} out-performing it and ${rejectedAsSmaller.length === 1 ? "its topics are" : "their topics are"} not opportunities.`,
     );
   }
   if (failures.length > 0) {

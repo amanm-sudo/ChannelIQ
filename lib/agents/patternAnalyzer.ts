@@ -251,7 +251,20 @@ export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
-    .replace(/[^a-z0-9+#.\s-]/g, " ")
+    // Drop hashtags and @mentions entirely, before any other cleanup.
+    //
+    // These are branding and metadata, never subject matter, and leaving them in
+    // produced the worst output this project has generated. Against a real
+    // channel the Whitespace Agent recommended making videos about
+    // "#ashusir #scienceandfun" — the presenter's own name and channel tag,
+    // lifted from a competitor's hashtag spam — and graded one of them HIGH
+    // confidence. The statistics were correct; the advice was gibberish.
+    //
+    // Stripping the whole token matters: keeping "#" as a word character meant
+    // "#ashusir" survived tokenisation, and removing only the "#" would have
+    // turned it into the equally useless bare word "ashusir".
+    .replace(/[#@][\p{L}\p{N}_]+/gu, " ")
+    .replace(/[^a-z0-9+.\s-]/g, " ")
     .split(/\s+/)
     .map((w) => w.replace(/^[-.]+|[-.]+$/g, ""))
     .filter((w) => w.length >= 3 && w.length <= 24)
