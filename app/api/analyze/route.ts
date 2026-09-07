@@ -60,6 +60,7 @@ function asStringArray(value: unknown): string[] {
 }
 
 export async function POST(req: NextRequest) {
+  const requestStartedAt = Date.now();
   let body: AnalyzeBody;
   try {
     body = (await req.json()) as AnalyzeBody;
@@ -90,6 +91,9 @@ export async function POST(req: NextRequest) {
       try {
         for await (const event of runPipeline({
           channel,
+          // Derived from maxDuration so the two can never drift apart. The
+          // reserve covers streaming the final report and platform overhead.
+          deadlineAt: requestStartedAt + (maxDuration - 12) * 1000,
           preferSeed: body.preferSeed === true,
           competitors: asStringArray(body.competitors),
           sampleSize,

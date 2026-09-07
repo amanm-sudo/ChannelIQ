@@ -291,7 +291,30 @@ Do not prefix any of them with `NEXT_PUBLIC_` — they are read server-side only
 
 Notes that actually matter on Vercel:
 
-- **`/api/analyze` streams NDJSON** and is declared `runtime = "nodejs"` with `maxDuration = 60`. That value is deliberate: 60s is valid on every plan and compute mode, whereas the Hobby ceiling is 60s and only Fluid compute raises it to 300s — a value above the plan cap risks failing the deployment. Measured runtimes are 0.1-0.7s for precomputed demo channels, 20-35s for a fresh live analysis, ~49s worst observed. On Fluid compute you can raise it to 300 for more margin.
+- **`/api/analyze` streams NDJSON** and is declared `runtime = "nodejs"` with `maxDuration = 60`. That value is deliberate: 60s is valid on every plan and compute mode, whereas the Hobby ceiling is 60s and only Fluid compute raises it to 300s — a value above the plan cap risks failing the deployment.
+
+### The request has a hard time budget
+
+Every analysis runs against a wall-clock deadline derived from `maxDuration` (see `PIPELINE_BUDGET_MS` in `lib/pipeline.ts`). Without one the pipeline is unbounded, and unbounded is not a theoretical problem: a real fresh run on a live channel took **119.5 seconds**, 101s of it inside the narration stage, because the model walk on quota errors, transient 503 backoffs and the correction retry all compose multiplicatively. On a deployed function that request is killed mid-stream and the user gets an error instead of a report.
+
+The budget is enforced at three levels:
+
+- **Per-call ceilings.** Every Gemini request carries an `AbortSignal`, so one slow generation cannot consume the whole budget.
+- **Skip decisions.** Remaining candidate models, the correction retry, and the thumbnail pass are each skipped when there is not enough time left to complete them.
+- **Priority.** The thumbnail pass is subordinate to the narration. It only starts when there is room for both, because it is the most expensive optional stage and feeds the least reliable section of the report.
+
+That priority was learned by getting it wrong. An early version let the vision pass take 21s and abort with nothing, leaving the narration too little time — so the report fell back to templated prose to pay for a thumbnail section that did not exist. The related lesson: a cap must be generous enough for the call to actually finish. A 14s cap on a call that measures 15-21s guaranteed an abort, which spends the full cost for no result. Either give a stage room to complete or stand it down, never both halves.
+
+Measured end to end after budgeting:
+
+| Path | Time |
+| --- | --- |
+| Bundled demo channel (precomputed narration) | 0.1 - 0.7s |
+| Live channel, repeat request | ~0.6s |
+| Live channel, fresh (thumbnails + narration both succeed) | 21 - 28s |
+| Worst case | bounded by the budget, and always returns a report |
+
+The worst case is now a *bounded* one: if time runs out the narration falls back to the deterministic writer and the thumbnail section says it was cut short. A slightly less fluent report always beats a request that dies.
 - **The seed datasets are statically imported** in `data/seed/index.ts`, not read with `fs` at runtime. A runtime `fs.readFileSync("data/seed/...")` works locally and then 404s in a serverless function — precisely the "worked on my machine" failure that kills a live demo.
 - **Run `npm run bake` and commit the result before deploying.** This is the step that keeps the narrated report available in production. See below.
 

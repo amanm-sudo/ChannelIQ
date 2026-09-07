@@ -1340,6 +1340,21 @@ export interface WriteOptions {
   /** Force the deterministic writer even if a key is present. */
   disableLlm?: boolean;
   /**
+   * Absolute wall-clock deadline (ms since epoch) for finishing the narration.
+   *
+   * Without this the LLM phase is effectively unbounded. A real fresh run on a
+   * live channel took 101 seconds in this stage alone — the model walk on quota
+   * errors, transient 503 backoffs and the correction retry all compose
+   * multiplicatively. That is well past any serverless function limit, so the
+   * request would simply be killed mid-stream.
+   *
+   * With a deadline, every model call is bounded, remaining candidates and the
+   * correction retry are skipped when there is no time for them, and the
+   * deterministic writer takes over. A slightly less fluent report always beats
+   * a request that dies.
+   */
+  deadlineAt?: number;
+  /**
    * Skip the narration cache and force a real model call.
    *
    * Used by the guard test suite: a cached report would make the live assertions
@@ -1472,7 +1487,7 @@ export async function writeStrategy(
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       log(attempt === 1 ? `Writing strategy with ${PRIMARY_MODEL}...` : "Correcting unverifiable figures...");
-      const { text, model: usedModel } = await callModel(client, contents);
+      const { text, model: usedModel } = await callModel(client, contents, options.deadlineAt);
       if (usedModel !== PRIMARY_MODEL) {
         log(`${PRIMARY_MODEL} was unavailable; used ${usedModel} instead.`);
       }
@@ -1495,6 +1510,13 @@ export async function writeStrategy(
       log(`Numeric guard rejected ${guard.violations.length} figure(s); asking for a correction.`);
       if (attempt === 2) {
         lastError = `numeric guard failed twice: ${guard.violations.slice(0, 3).join("; ")}`;
+        break;
+      }
+      // A correction is a whole extra generation. Skip it rather than blow the
+      // budget — the deterministic writer is right there and costs nothing.
+      const remaining = options.deadlineAt ? options.deadlineAt - Date.now() : Number.POSITIVE_INFINITY;
+      if (remaining < MIN_CALL_BUDGET_MS + WRITE_RESERVE_MS) {
+        lastError = "no time left for a correction pass within the request budget";
         break;
       }
       contents.push({ role: "model", parts: [{ text }] });
@@ -1587,31 +1609,60 @@ function humaniseError(message: string): string {
   if (/API key|401|403|PERMISSION_DENIED|API_KEY_INVALID/i.test(message)) {
     return "the Gemini API key was rejected";
   }
+  if (/ran out of time|no time left|budget|abort|AbortError|The operation was aborted/i.test(message)) {
+    return "the narration did not finish inside the request time budget";
+  }
   if (/token ceiling|MAX_TOKENS/i.test(message)) return "the model returned a truncated response";
   if (/parseable JSON|Expected/i.test(message)) return "the model returned malformed JSON";
   if (/numeric guard/i.test(message)) return message;
   return message.length > 160 ? `${message.slice(0, 157)}...` : message;
 }
 
+/** Reserved for validation, guard checks and assembling the response. */
+const WRITE_RESERVE_MS = 2_000;
+/** Below this there is no point starting a model call at all. */
+const MIN_CALL_BUDGET_MS = 6_000;
+/** No single generation is allowed to run longer than this. */
+const MAX_CALL_MS = 25_000;
+
+export class DeadlineError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeadlineError";
+  }
+}
+
 /** Try the configured model, then known-good fallbacks if it is unavailable. */
 async function callModel(
   client: GoogleGenAI,
   contents: GeminiTurn[],
+  deadlineAt?: number,
 ): Promise<{ text: string; model: string }> {
   let lastErr: unknown;
 
+  const budget = () => (deadlineAt ? deadlineAt - Date.now() - WRITE_RESERVE_MS : MAX_CALL_MS);
+
   for (const model of MODEL_CANDIDATES) {
+    if (budget() < MIN_CALL_BUDGET_MS) {
+      throw new DeadlineError(
+        `ran out of time before ${model} could be tried (the request has a hard time budget)`,
+      );
+    }
     // Two attempts per model for transient conditions before moving on. A 503
     // "high demand" is usually over in a second or two, and burning the whole
     // candidate list on a blip would leave a demo on templated prose for no
     // reason. Quota errors are NOT retried here — they need a different model,
     // not a second attempt at the same one.
     for (let attempt = 1; attempt <= 2; attempt++) {
+      const callMs = Math.min(MAX_CALL_MS, Math.max(MIN_CALL_BUDGET_MS, budget()));
       try {
         const res = await client.models.generateContent({
         model,
         contents,
         config: {
+          // Hard per-call ceiling. A single slow generation must not be able to
+          // consume the whole request budget.
+          abortSignal: AbortSignal.timeout(callMs),
           systemInstruction: SYSTEM_PROMPT,
           temperature: 0.4,
           // Generous ceiling. On Gemini 3.x, reasoning tokens are drawn from the
@@ -1651,7 +1702,8 @@ async function callModel(
         // Auth errors and bad requests fail identically on every candidate, so
         // there is nothing to gain from retrying or walking.
         if (!isModelAvailabilityError(err)) throw err;
-        if (isTransientError(err) && attempt === 1) {
+        // Only spend a backoff-and-retry if there is time left to use it.
+        if (isTransientError(err) && attempt === 1 && budget() > MIN_CALL_BUDGET_MS + 1_500) {
           await sleep(1500);
           continue;
         }

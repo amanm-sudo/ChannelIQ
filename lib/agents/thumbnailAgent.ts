@@ -72,7 +72,31 @@ const EMPTY: ThumbnailReport = {
 export interface ThumbnailOptions {
   onLog?: (message: string) => void;
   disable?: boolean;
+  /** Absolute wall-clock deadline (ms since epoch) for the vision pass. */
+  deadlineAt?: number;
 }
+
+/**
+ * Budget policy for this stage, and the reasoning behind the numbers.
+ *
+ * A vision call over 15 images measures at 15-21s, which is a large slice of a
+ * ~45s request. It also feeds the least reliable section of the report. So it is
+ * explicitly subordinate to the narration: it only starts when there is enough
+ * time left for BOTH it and a full narration, and its own call is capped well
+ * below what it might want.
+ *
+ * This ordering was learned the hard way. With a 20s cap and a 20s entry
+ * requirement, a real run spent 21.4s here, aborted with nothing, and left the
+ * narration too little time — so the report fell back to templated prose to pay
+ * for a thumbnail section that did not exist.
+ *
+ * The cap must also be generous enough for the call to actually COMPLETE.
+ * Measured completions are 15-21s, so a 14s cap guaranteed an abort: 15s spent
+ * for no result at all, which is strictly worse than not running. Either give it
+ * room to finish or stand it down — never both halves of the cost.
+ */
+export const THUMBNAIL_MIN_BUDGET_MS = 40_000;
+const VISION_MAX_CALL_MS = 22_000;
 
 async function downloadImage(url: string): Promise<{ media_type: string; data: string } | null> {
   if (!url || !/^https:\/\//i.test(url)) return null;
@@ -162,16 +186,14 @@ export async function analyzeThumbnails(
       flags = cachedFlags;
     } else {
       log(`Running a vision pass over ${images.length} thumbnails...`);
-      flags = await classifyThumbnails(images.map((i) => i.image));
+      flags = await classifyThumbnails(images.map((i) => i.image), options.deadlineAt);
       cacheSet(visionKey, flags, 7 * 24 * 60 * 60 * 1000);
     }
   } catch (err) {
     return {
       ...EMPTY,
       attempted: true,
-      note: /RESOURCE_EXHAUSTED|429|quota/i.test(err instanceof Error ? err.message : String(err))
-        ? "The thumbnail vision pass was skipped because the Gemini API daily free-tier quota is exhausted. The rest of the report is unaffected."
-        : `Thumbnail vision pass failed (${(err instanceof Error ? err.message : String(err)).slice(0, 140)}). The rest of the report is unaffected.`,
+      note: thumbnailFailureNote(err),
     };
   }
 
@@ -240,6 +262,18 @@ export async function analyzeThumbnails(
  * cases instead of whatever a live channel happens to produce. The bug this
  * replaces was invisible precisely because it only showed up on real data.
  */
+/** Turn a vision-pass failure into something a reader can act on. */
+function thumbnailFailureNote(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/RESOURCE_EXHAUSTED|429|quota/i.test(message)) {
+    return "The thumbnail pass was skipped because the Gemini API daily free-tier quota is exhausted. The rest of the report is unaffected.";
+  }
+  if (/abort|timeout|timed out/i.test(message)) {
+    return "The thumbnail pass was cut short to keep the analysis inside its time budget. The rest of the report is unaffected.";
+  }
+  return `Thumbnail pass failed (${message.slice(0, 140)}). The rest of the report is unaffected.`;
+}
+
 export function summariseTraits(
   input: ThumbnailTraitSegment[],
   sampled: number,
@@ -311,6 +345,7 @@ export function summariseTraits(
 /** One multi-image call. The model does perception only, never judgement. */
 async function classifyThumbnails(
   images: Array<{ media_type: string; data: string }>,
+  deadlineAt?: number,
 ): Promise<Record<TraitKey, boolean>[]> {
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
 
@@ -360,6 +395,10 @@ async function classifyThumbnails(
         model,
         contents: [{ role: "user", parts }],
         config: {
+          // Bounded so a slow vision call cannot eat the narration's budget.
+          abortSignal: AbortSignal.timeout(
+            Math.min(VISION_MAX_CALL_MS, Math.max(5_000, deadlineAt ? deadlineAt - Date.now() : VISION_MAX_CALL_MS)),
+          ),
           temperature: 0,
           // Same trap as the Strategy Writer: reasoning tokens come out of this
           // budget, so a ceiling sized for the JSON alone gets eaten by thinking

@@ -22,7 +22,7 @@
 
 import { CollectorError, collectChannelData } from "./agents/dataCollector";
 import { analyzePatterns } from "./agents/patternAnalyzer";
-import { analyzeThumbnails } from "./agents/thumbnailAgent";
+import { THUMBNAIL_MIN_BUDGET_MS, analyzeThumbnails } from "./agents/thumbnailAgent";
 import { PRIMARY_MODEL, hasLlmKey, writeStrategy } from "./agents/strategyWriter";
 import { findWhitespace } from "./agents/whitespaceAgent";
 import { QuotaMeter, hasApiKey } from "./youtube";
@@ -35,8 +35,29 @@ import type {
 
 export const REPORT_VERSION = "1.0.0";
 
+/**
+ * Total wall-clock budget for one analysis.
+ *
+ * Sized to sit safely inside the 60s serverless function ceiling declared in
+ * app/api/analyze/route.ts, leaving headroom for streaming the response and any
+ * platform overhead.
+ *
+ * This exists because the pipeline was unbounded. A real fresh run on a live
+ * channel took 119.5s end to end — 101s of it inside the narration stage, where
+ * the model walk on quota errors, 503 backoffs and the correction retry compose
+ * multiplicatively. On a deployed function that request is simply killed, and
+ * the user gets an error instead of a report.
+ *
+ * The budget makes the worst case bounded and the outcome always a report: the
+ * optional stages stand down when there is no time for them, and the narration
+ * falls back to the deterministic writer.
+ */
+export const PIPELINE_BUDGET_MS = 45_000;
+
 export interface PipelineInput {
   channel: string;
+  /** Absolute wall-clock deadline. Defaults to now + PIPELINE_BUDGET_MS. */
+  deadlineAt?: number;
   /** Load the bundled snapshot instead of hitting the API. */
   preferSeed?: boolean;
   /** Competitor handles/URLs the user supplied. */
@@ -68,6 +89,9 @@ const NO_THUMBNAILS: ThumbnailReport = {
 };
 
 export async function* runPipeline(input: PipelineInput): AsyncGenerator<PipelineEvent> {
+  const deadlineAt = input.deadlineAt ?? Date.now() + PIPELINE_BUDGET_MS;
+  const remainingMs = () => deadlineAt - Date.now();
+
   const meter = new QuotaMeter();
   const timings: Record<string, number> = {};
   const warnings: string[] = [];
@@ -182,9 +206,27 @@ export async function* runPipeline(input: PipelineInput): AsyncGenerator<Pipelin
 
   // ---- Stage 3b: Thumbnails (non-fatal) ---------------------------------
   let thumbnails = NO_THUMBNAILS;
-  const wantThumbnails = input.includeThumbnails !== false && !input.disableLlm && hasLlmKey();
+  const enoughTimeForThumbnails = remainingMs() >= THUMBNAIL_MIN_BUDGET_MS;
+  const wantThumbnails =
+    input.includeThumbnails !== false && !input.disableLlm && hasLlmKey() && enoughTimeForThumbnails;
 
-  if (!wantThumbnails) {
+  // The thumbnail pass is the most expensive optional stage (~15s for a vision
+  // call over 15 images) and it feeds the lowest-confidence section of the
+  // report. If the earlier stages have already used the budget, standing it down
+  // to protect the narration is the right trade.
+  if (hasLlmKey() && !input.disableLlm && input.includeThumbnails !== false && !enoughTimeForThumbnails) {
+    thumbnails = {
+      ...NO_THUMBNAILS,
+      attempted: true,
+      note: `The thumbnail pass was skipped to stay inside this request's time budget (${(remainingMs() / 1000).toFixed(0)}s left). Everything else in the report is unaffected.`,
+    };
+    yield {
+      type: "stage",
+      stage: "thumbnails",
+      status: "skipped",
+      detail: "Skipped to protect the request time budget",
+    };
+  } else if (!wantThumbnails) {
     thumbnails = {
       ...NO_THUMBNAILS,
       note: hasLlmKey()
@@ -201,7 +243,8 @@ export async function* runPipeline(input: PipelineInput): AsyncGenerator<Pipelin
     yield { type: "stage", stage: "thumbnails", status: "start", detail: "Vision pass over a spread of thumbnails" };
     t0 = Date.now();
     try {
-      thumbnails = await analyzeThumbnails(signals, { onLog: log });
+      // Reserve 18s of the budget for the narration, which matters more.
+      thumbnails = await analyzeThumbnails(signals, { onLog: log, deadlineAt: deadlineAt - 18_000 });
       timings.thumbnails = Date.now() - t0;
       for (const m of logs.splice(0)) yield { type: "log", message: m };
       yield {
@@ -235,6 +278,7 @@ export async function* runPipeline(input: PipelineInput): AsyncGenerator<Pipelin
     strategy = await writeStrategy(signals, whitespace, thumbnails, {
       onLog: log,
       disableLlm: input.disableLlm,
+      deadlineAt,
     });
   } catch (err) {
     // writeStrategy is designed never to throw. If it somehow does, fall back
