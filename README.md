@@ -266,7 +266,7 @@ Zero config — the defaults are correct. For the record:
 | Build command | `npm run build` (default) |
 | Output directory | leave blank (Next.js default `.next`) |
 | Install command | `npm install` (default) |
-| Node version | 20.x or 22.x |
+| Node version | 20.x or newer (pinned via `engines` in package.json) |
 | Root directory | leave blank |
 
 Environment variables to add in **Project Settings → Environment Variables** (both optional; the app runs without either):
@@ -274,14 +274,24 @@ Environment variables to add in **Project Settings → Environment Variables** (
 ```
 YOUTUBE_API_KEY   = <your key>
 GEMINI_API_KEY    = <your key>
-GEMINI_MODEL      = gemini-3.6-flash     (optional override)
 ```
 
-Add them to **Production, Preview and Development** so preview deploys behave like production. Do not prefix them with `NEXT_PUBLIC_` — they are read server-side only and prefixing them would ship your keys to the browser.
+Those are the only two worth setting. The complete set of variables the code reads is:
+
+| Variable | Required | Behaviour when absent |
+| --- | --- | --- |
+| `YOUTUBE_API_KEY` | no | Live channel lookup is disabled; bundled demo channels still work |
+| `GEMINI_API_KEY` | no | Deterministic writer plus precomputed narrations; no thumbnail pass |
+| `GEMINI_MODEL` | no | Defaults to `gemini-3.6-flash`, then falls back through `3.5-flash` and `3.1-flash-lite` |
+| `CHANNELIQ_CACHE_TTL_MS` | no | Defaults to 6 hours |
+
+Nothing else is read anywhere in the codebase, so a deployment with just those two keys is complete. **Production and Preview** is sufficient; the Development scope only affects `vercel dev` on your own machine.
+
+Do not prefix any of them with `NEXT_PUBLIC_` — they are read server-side only, and the prefix would ship your keys to the browser.
 
 Notes that actually matter on Vercel:
 
-- **`/api/analyze` streams NDJSON** and is declared `runtime = "nodejs"` with `maxDuration = 120`. On the Hobby plan the function ceiling is lower than 120s; a cold run with the vision pass takes ~15-30s so this is comfortable either way, but do not lower it.
+- **`/api/analyze` streams NDJSON** and is declared `runtime = "nodejs"` with `maxDuration = 60`. That value is deliberate: 60s is valid on every plan and compute mode, whereas the Hobby ceiling is 60s and only Fluid compute raises it to 300s — a value above the plan cap risks failing the deployment. Measured runtimes are 0.1-0.7s for precomputed demo channels, 20-35s for a fresh live analysis, ~49s worst observed. On Fluid compute you can raise it to 300 for more margin.
 - **The seed datasets are statically imported** in `data/seed/index.ts`, not read with `fs` at runtime. A runtime `fs.readFileSync("data/seed/...")` works locally and then 404s in a serverless function — precisely the "worked on my machine" failure that kills a live demo.
 - **Run `npm run bake` and commit the result before deploying.** This is the step that keeps the narrated report available in production. See below.
 

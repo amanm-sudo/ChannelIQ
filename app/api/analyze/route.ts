@@ -19,7 +19,27 @@ import type { PipelineEvent } from "@/lib/types";
 // thumbnail vision pass.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+
+/**
+ * 60 seconds, chosen because it is valid on EVERY Vercel plan and compute mode.
+ *
+ * The Hobby plan caps function duration at 60s (10s default, configurable up to
+ * 60). Fluid compute raises that to 300s and is the default for new projects,
+ * but a value above the plan's ceiling risks failing the deployment outright —
+ * and a deploy that will not build is a far worse outcome than an occasional
+ * slow request, so this takes the value that cannot fail.
+ *
+ * Headroom against measured runtimes:
+ *   - bundled demo channels (precomputed narration):  0.1 - 0.7s
+ *   - live channel, cached:                           ~2 - 5s
+ *   - live channel, fresh LLM + thumbnail vision:     20 - 35s typical
+ *   - worst observed (fresh call plus a correction):  ~49s
+ *
+ * If you are on Fluid compute you can raise this to 300 for more margin on that
+ * worst case. Either way a timeout is handled: the client renders the error
+ * state with one-click demo-channel recovery rather than hanging.
+ */
+export const maxDuration = 60;
 
 interface AnalyzeBody {
   channel?: unknown;

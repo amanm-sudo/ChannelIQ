@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "ChannelIQ - an agent pipeline that turns a YouTube channel's real data into a numbered, justified content strategy.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
