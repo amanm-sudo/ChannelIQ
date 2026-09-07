@@ -1,0 +1,37 @@
+{
+  "name": "channeliq",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ChannelIQ - an agent pipeline that turns a YouTube channel's real data into a numbered, justified content strategy.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "snapshot": "node --env-file-if-exists=.env.local --env-file-if-exists=.env --import tsx scripts/snapshot.ts",
+    "pipeline": "node --env-file-if-exists=.env.local --env-file-if-exists=.env --import tsx scripts/runPipeline.ts",
+    "sanity": "node --env-file-if-exists=.env.local --import tsx scripts/sanityCheck.ts",
+    "smoke": "node --import tsx scripts/smokeTest.ts",
+    "guard": "node --env-file-if-exists=.env.local --import tsx scripts/guardTest.ts",
+    "bake": "node --env-file-if-exists=.env.local --import tsx scripts/bake.ts",
+    "verify": "npm run typecheck && npm run guard && npm run build",
+    "seed": "node --import tsx scripts/generateSeed.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.20.0",
+    "next": "15.5.25",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "recharts": "2.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "@types/react": "19.0.7",
+    "@types/react-dom": "19.0.3",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

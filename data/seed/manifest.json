@@ -1,0 +1,173 @@
+{
+  "generatedAt": "2026-09-01T16:06:59.852Z",
+  "channels": [
+    {
+      "slug": "devbrief",
+      "channelId": "UCSEEDDEVBRIEF0000000000",
+      "title": "DevBrief",
+      "handle": "devbrief",
+      "aliases": [
+        "devbrief",
+        "@devbrief",
+        "dev brief",
+        "UCseedDEVBRIEF00000001",
+        "devbrief",
+        "UCSEEDDEVBRIEF0000000000"
+      ],
+      "niche": "developer tooling tutorials",
+      "subscribers": 214000,
+      "videoCount": 48,
+      "competitors": [
+        "shipfast-weekly",
+        "the-refactor"
+      ],
+      "isPrimaryDemo": true
+    },
+    {
+      "slug": "plain-kitchen",
+      "channelId": "UCSEEDPLAINKITCHEN000000",
+      "title": "The Plain Kitchen",
+      "handle": "plainkitchen",
+      "aliases": [
+        "plainkitchen",
+        "@plainkitchen",
+        "the plain kitchen",
+        "UCseedPLAINKITCHEN0001",
+        "plain-kitchen",
+        "UCSEEDPLAINKITCHEN000000"
+      ],
+      "niche": "home cooking weeknight dinners",
+      "subscribers": 47500,
+      "videoCount": 44,
+      "competitors": [
+        "weeknight-wok",
+        "batch-and-freeze"
+      ],
+      "isPrimaryDemo": true
+    },
+    {
+      "slug": "homelab-hour",
+      "channelId": "UCSEEDHOMELABHOUR0000000",
+      "title": "Homelab Hour",
+      "handle": "homelabhour",
+      "aliases": [
+        "homelabhour",
+        "@homelabhour",
+        "homelab hour",
+        "UCseedHOMELABHOUR00001",
+        "homelab-hour",
+        "UCSEEDHOMELABHOUR0000000"
+      ],
+      "niche": "homelab self hosting home server",
+      "subscribers": 11300,
+      "videoCount": 21,
+      "competitors": [
+        "rackmounted",
+        "selfhosted-sundays"
+      ],
+      "isPrimaryDemo": true
+    },
+    {
+      "slug": "shipfast-weekly",
+      "channelId": "UCSEEDSHIPFASTWEEKLY0000",
+      "title": "ShipFast Weekly",
+      "handle": "shipfastweekly",
+      "aliases": [
+        "shipfast-weekly",
+        "shipfastweekly",
+        "@shipfastweekly",
+        "UCSEEDSHIPFASTWEEKLY0000"
+      ],
+      "niche": "",
+      "subscribers": 388000,
+      "videoCount": 30,
+      "competitors": [],
+      "isPrimaryDemo": false
+    },
+    {
+      "slug": "the-refactor",
+      "channelId": "UCSEEDTHEREFACTOR0000000",
+      "title": "The Refactor",
+      "handle": "therefactor",
+      "aliases": [
+        "the-refactor",
+        "therefactor",
+        "@therefactor",
+        "UCSEEDTHEREFACTOR0000000"
+      ],
+      "niche": "",
+      "subscribers": 156000,
+      "videoCount": 28,
+      "competitors": [],
+      "isPrimaryDemo": false
+    },
+    {
+      "slug": "weeknight-wok",
+      "channelId": "UCSEEDWEEKNIGHTWOK000000",
+      "title": "Weeknight Wok",
+      "handle": "weeknightwok",
+      "aliases": [
+        "weeknight-wok",
+        "weeknightwok",
+        "@weeknightwok",
+        "UCSEEDWEEKNIGHTWOK000000"
+      ],
+      "niche": "",
+      "subscribers": 122000,
+      "videoCount": 30,
+      "competitors": [],
+      "isPrimaryDemo": false
+    },
+    {
+      "slug": "batch-and-freeze",
+      "channelId": "UCSEEDBATCHANDFREEZE0000",
+      "title": "Batch & Freeze",
+      "handle": "batchandfreeze",
+      "aliases": [
+        "batch-and-freeze",
+        "batchandfreeze",
+        "@batchandfreeze",
+        "UCSEEDBATCHANDFREEZE0000"
+      ],
+      "niche": "",
+      "subscribers": 78000,
+      "videoCount": 26,
+      "competitors": [],
+      "isPrimaryDemo": false
+    },
+    {
+      "slug": "rackmounted",
+      "channelId": "UCSEEDRACKMOUNTED0000000",
+      "title": "RackMounted",
+      "handle": "rackmounted",
+      "aliases": [
+        "rackmounted",
+        "rackmounted",
+        "@rackmounted",
+        "UCSEEDRACKMOUNTED0000000"
+      ],
+      "niche": "",
+      "subscribers": 205000,
+      "videoCount": 28,
+      "competitors": [],
+      "isPrimaryDemo": false
+    },
+    {
+      "slug": "selfhosted-sundays",
+      "channelId": "UCSEEDSELFHOSTEDSUNDAYS0",
+      "title": "SelfHosted Sundays",
+      "handle": "selfhostedsundays",
+      "aliases": [
+        "selfhosted-sundays",
+        "selfhostedsundays",
+        "@selfhostedsundays",
+        "UCSEEDSELFHOSTEDSUNDAYS0"
+      ],
+      "niche": "",
+      "subscribers": 64000,
+      "videoCount": 26,
+      "competitors": [],
+      "isPrimaryDemo": false
+    }
+  ]
+}

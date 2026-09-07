@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #08090c;
+  color: #e7e9ee;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Visible focus ring everywhere — the report is keyboard navigable. */
+*:focus-visible {
+  outline: 2px solid #4ade80;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-ink-700 bg-ink-900/70 p-5;
+  }
+  .card-tight {
+    @apply rounded-lg border border-ink-700 bg-ink-850 p-4;
+  }
+  .label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500;
+  }
+  .stat {
+    @apply font-mono text-sm text-slate-200;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium;
+  }
+  .prose-report p {
+    @apply text-[15px] leading-relaxed text-slate-300;
+  }
+}
+
+/* Thin, unobtrusive scrollbars so long evidence lists do not look broken. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #232833;
+  border-radius: 6px;
+  border: 3px solid #08090c;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #333a48;
+}
+
+@keyframes ciq-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-ciq-pulse {
+  animation: ciq-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ciq-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-ciq-rise {
+  animation: ciq-rise 0.35s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ciq-pulse,
+  .animate-ciq-rise {
+    animation: none;
+  }
+}
+
+/*
+ * Print styles double as the PDF export: "Save as PDF" from the browser
+ * produces a clean, shareable deliverable with no extra dependency, no
+ * server-side rendering step and nothing to break during a demo.
+ */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .card,
+  .card-tight {
+    border-color: #d1d5db !important;
+    background: #ffffff !important;
+    break-inside: avoid;
+  }
+  .print-break {
+    break-before: page;
+  }
+  h1, h2, h3 {
+    color: #111827 !important;
+  }
+  p, li, span, div, td, th {
+    color: #1f2937 !important;
+  }
+  .print-plain {
+    background: #ffffff !important;
+    border-color: #d1d5db !important;
+  }
+}
