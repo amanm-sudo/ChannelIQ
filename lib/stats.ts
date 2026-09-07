@@ -9,6 +9,38 @@
 
 import type { Confidence } from "./types";
 
+/**
+ * The analysis clock: midnight UTC of the current day.
+ *
+ * Every figure that is derived from "now" — video ages, days-since-last-covered,
+ * the seed timeline shift — is computed against this instead of Date.now(), so
+ * the entire analysis is deterministic for a whole UTC day.
+ *
+ * That property is load-bearing, not tidiness. The precomputed narration bundle
+ * is keyed on a hash of the computed briefing, so any value that drifts second
+ * to second invalidates it continuously. Two concrete failures came from this:
+ *
+ *  - `Math.round((target - newest) / week)` in the seed timeline shift sits near
+ *    a .5 boundary for part of each week, so a few minutes of elapsed time
+ *    flipped the rounding by a WHOLE WEEK. Every video moved 7 days, changing
+ *    which ones fell inside the 48h exclusion — a channel baked at n=21 was
+ *    being served at n=20 minutes later.
+ *  - Video ages ticked over at each video's own time of day rather than at a
+ *    day boundary, so figures shifted unpredictably through the day.
+ *
+ * The visible symptom was demo channels taking 34s instead of 0.2s, because
+ * their committed narrations no longer matched and the model was called afresh.
+ */
+export function analysisDayStart(): number {
+  const day = 86_400_000;
+  return Math.floor(Date.now() / day) * day;
+}
+
+/** Whole days between the analysis clock and an ISO timestamp. Never negative. */
+export function ageInDays(publishedAtIso: string): number {
+  return Math.max(0, Math.floor((analysisDayStart() - Date.parse(publishedAtIso)) / 86_400_000));
+}
+
 export function median(values: number[]): number {
   if (values.length === 0) return 0;
   const s = [...values].sort((a, b) => a - b);

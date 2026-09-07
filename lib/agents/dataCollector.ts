@@ -16,6 +16,7 @@
  */
 
 import { DEMO_CHANNELS, SEED_DATASETS, findSeedSlug, seedEntry } from "@/data/seed";
+import { analysisDayStart } from "@/lib/stats";
 import { QuotaMeter, YouTubeError, fetchChannelVideos, hasApiKey } from "@/lib/youtube";
 import type { ChannelDataset, ChannelRecord, VideoRecord } from "@/lib/types";
 
@@ -51,9 +52,16 @@ export interface CollectResult extends ChannelDataset {
 function shiftSeedTimeline(videos: VideoRecord[], targetNewestAgeDays = 4): VideoRecord[] {
   if (videos.length === 0) return videos;
   const newest = Math.max(...videos.map((v) => Date.parse(v.publishedAt)));
-  const target = Date.now() - targetNewestAgeDays * 86_400_000;
   const week = 7 * 86_400_000;
-  const weeks = Math.round((target - newest) / week);
+
+  // Measured from the analysis clock (midnight UTC) and floored rather than
+  // rounded. Math.round against a live Date.now() sat near a .5 boundary for
+  // part of each week, so a few minutes of elapsed time flipped the shift by a
+  // whole week and silently changed the sample size. floor + a day-quantised
+  // reference makes this a step function that moves once a week, at a day
+  // boundary, identically for every caller on that day.
+  const target = analysisDayStart() - targetNewestAgeDays * 86_400_000;
+  const weeks = Math.floor((target - newest) / week);
   if (weeks === 0) return videos;
   const shift = weeks * week;
 

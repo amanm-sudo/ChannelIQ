@@ -38,6 +38,7 @@
 import {
   CONFIDENCE_WEIGHT,
   WEEKDAY_LABELS,
+  ageInDays,
   clamp,
   formatCount,
   formatHourWindow,
@@ -398,14 +399,15 @@ export function analyzePatterns(dataset: ChannelDataset): PatternSignals {
       ...video,
       performanceIndex,
       baselineViews,
-      // Quantised to whole days, deliberately.
+      // Measured against the analysis clock (midnight UTC), not Date.now().
       //
       // Sub-day precision in "how old is this video" is meaningless for every
-      // calculation here, and letting it vary continuously made the entire
-      // downstream briefing change on every single run — which silently
-      // defeated the narration cache, since that is keyed on a hash of the
-      // briefing. Whole days make the pipeline deterministic within a day.
-      ageDays: Math.floor((Date.now() - Date.parse(video.publishedAt)) / 86_400_000),
+      // calculation here, and letting it vary continuously made the whole
+      // downstream briefing change on every run, defeating the narration cache
+      // and the precomputed bundle. Anchoring to a day boundary — rather than
+      // just flooring a live clock, which ticks over at each video's own time of
+      // day — makes the figures identical for the entire UTC day.
+      ageDays: ageInDays(video.publishedAt),
       adjustedIndex: performanceIndex, // replaced below, once bucket effects are known
       likeRate: video.views > 0 ? video.likes / video.views : 0,
       commentRate: video.views > 0 ? video.comments / video.views : 0,
@@ -748,7 +750,9 @@ function clusterTopics(scored: ScoredVideo[]): TopicCluster[] {
       confidence: gradeConfidence(cohort.length, rest.length, lp, p),
       pSuperiority: p,
       lastCoveredAt: newest.publishedAt,
-      daysSinceLastCovered: Math.round((Date.now() - Date.parse(newest.publishedAt)) / 86_400_000),
+      // Analysis clock, so "last covered N days ago" is a stable figure for the
+      // whole UTC day rather than ticking over at an arbitrary moment.
+      daysSinceLastCovered: ageInDays(newest.publishedAt),
       examples: [...cohort]
         .sort((a, b) => b.adjustedIndex - a.adjustedIndex)
         .slice(0, 2)

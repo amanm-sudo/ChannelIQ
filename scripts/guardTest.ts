@@ -280,6 +280,39 @@ const NO_TH: ThumbnailReport = {
  * was a general heuristic. Structured field and prose contradicted each other,
  * and nothing was checking for that.
  */
+/**
+ * The briefing must be byte-identical across repeated runs.
+ *
+ * The precomputed narration bundle is keyed on a hash of the briefing, so any
+ * value that drifts between two runs on the same day invalidates it silently and
+ * the demo channels stop being instant. This caught two real defects: a seed
+ * timeline shift whose Math.round flipped by a whole week on a few minutes of
+ * elapsed time, and video ages that ticked over at each video's own time of day.
+ */
+async function testBriefingDeterminism() {
+  section("A3d. The briefing is deterministic within a day");
+
+  for (const demo of DEMO_CHANNELS) {
+    const build = async () => {
+      const dataset = await collectChannelData(demo.slug, { preferSeed: true });
+      const signals = analyzePatterns(dataset);
+      const whitespace = await findWhitespace(dataset, signals, { seedSlugs: dataset.suggestedCompetitorSlugs });
+      return { briefing: buildBriefing(signals, whitespace, NO_TH), n: signals.sampleSize };
+    };
+
+    const a = await build();
+    await new Promise((r) => setTimeout(r, 1200));
+    const b = await build();
+
+    const same = JSON.stringify(a.briefing) === JSON.stringify(b.briefing);
+    check(
+      `${demo.title}: two builds 1.2s apart are identical (n=${a.n})`,
+      same && a.n === b.n,
+      same && a.n === b.n ? "" : `sample size ${a.n} -> ${b.n}; briefing drifted`,
+    );
+  }
+}
+
 async function testTimingEvidenceConsistency() {
   section("A3b. Timing evidence grade agrees with its own prose");
 
@@ -672,6 +705,7 @@ async function main() {
   testParser();
   testGuard();
   await testDeterministicSelfConsistency();
+  await testBriefingDeterminism();
   await testTimingEvidenceConsistency();
   testThumbnailWording();
   await testPrecomputed();
