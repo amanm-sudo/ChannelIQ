@@ -64,6 +64,22 @@ export default function Home() {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      /*
+       * Client-side ceiling, independent of the server's own time budget.
+       *
+       * Defensive rather than a fix for anything observed. The server bounds its
+       * own work, but nothing here bounds the WAIT, so a stalled connection — a
+       * killed function, a dropped socket, an intermediary holding the stream
+       * open with no data — would leave the pipeline animation running forever.
+       * A stuck spinner is the worst state this UI can be in, so the client
+       * enforces its own limit and falls into the error state with one-click
+       * demo recovery.
+       *
+       * 90s sits well above the server's ~48s budget, so a legitimately slow
+       * analysis is never cut off by the client first.
+       */
+      const hardStop = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), 90_000);
+
       setPhase("running");
       setStages(Object.fromEntries(STAGE_ORDER.map((s) => [s, { status: "pending", detail: "" }])));
       setLogs([]);
@@ -148,12 +164,22 @@ export default function Home() {
           setPhase("error");
         }
       } catch (err) {
+        // A deliberate abort (user started another run, or navigated) is silent.
+        // A timeout is not: it needs to surface as a recoverable error.
         if (err instanceof DOMException && err.name === "AbortError") return;
+
+        const timedOut = err instanceof DOMException && err.name === "TimeoutError";
         setError({
-          message: err instanceof Error ? err.message : "Something went wrong running the analysis.",
+          message: timedOut
+            ? "The analysis took too long to respond and was stopped. This usually means the live YouTube or Gemini API is being slow. A bundled demo channel runs the identical pipeline instantly."
+            : err instanceof Error
+              ? err.message
+              : "Something went wrong running the analysis.",
           recoverable: true,
         });
         setPhase("error");
+      } finally {
+        clearTimeout(hardStop);
       }
     },
     [],

@@ -351,6 +351,8 @@ This is checked, not assumed: with `.cache/` deleted, a fresh process and **no `
 
 So the pre-demo sequence is `npm run bake && npm run verify`, then commit and deploy. Also re-bake after any change to the analysis logic or the seed data.
 
+For the hash to match, the briefing has to be **deterministic within a day**, which is why every figure derived from "now" — video ages, days-since-last-covered, the seed timeline shift — is computed against an analysis clock fixed at midnight UTC (`analysisDayStart()` in `lib/stats.ts`) rather than `Date.now()`. Two defects came from not doing this, and both showed up only in production: the seed timeline shift used `Math.round` against a live clock, and that quotient sits near a `.5` boundary for part of each week, so a few minutes of elapsed time flipped the shift by a whole week and changed the sample size (a channel baked at n=21 was served at n=20); and video ages ticked over at each video's own time of day. The visible symptom was demo channels taking 34s instead of 0.2s. `npm run guard` now builds each demo briefing twice, 1.2s apart, and requires the two to be byte-identical.
+
 One local gotcha: the narrations are a **statically imported JSON module**, so `next build` inlines them. Editing only `narrations.json` does not always invalidate Next's build cache, which means a locally rebuilt bundle can still serve the previous narrations. If you are testing the precomputed path locally, `rm -rf .next` before rebuilding. This does not affect Vercel, where every deploy builds from a fresh checkout.
 
 ### Gemini quota
