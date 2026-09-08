@@ -1622,8 +1622,17 @@ function humaniseError(message: string): string {
 const WRITE_RESERVE_MS = 2_000;
 /** Below this there is no point starting a model call at all. */
 const MIN_CALL_BUDGET_MS = 6_000;
-/** No single generation is allowed to run longer than this. */
+/** Ceiling on a single generation when serving a request. */
 const MAX_CALL_MS = 25_000;
+/**
+ * Ceiling when there is no request deadline at all — i.e. the offline bake step.
+ *
+ * 25s is a constraint imposed by a serverless request, not a property of the
+ * model, so applying it to a build script was wrong: `npm run bake` started
+ * failing with "did not finish inside the request time budget" when it has no
+ * request and no budget. A build step can afford to wait.
+ */
+const OFFLINE_CALL_MS = 120_000;
 
 export class DeadlineError extends Error {
   constructor(message: string) {
@@ -1640,7 +1649,7 @@ async function callModel(
 ): Promise<{ text: string; model: string }> {
   let lastErr: unknown;
 
-  const budget = () => (deadlineAt ? deadlineAt - Date.now() - WRITE_RESERVE_MS : MAX_CALL_MS);
+  const budget = () => (deadlineAt ? deadlineAt - Date.now() - WRITE_RESERVE_MS : OFFLINE_CALL_MS);
 
   for (const model of MODEL_CANDIDATES) {
     if (budget() < MIN_CALL_BUDGET_MS) {
@@ -1654,7 +1663,8 @@ async function callModel(
     // reason. Quota errors are NOT retried here — they need a different model,
     // not a second attempt at the same one.
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const callMs = Math.min(MAX_CALL_MS, Math.max(MIN_CALL_BUDGET_MS, budget()));
+      const ceiling = deadlineAt ? MAX_CALL_MS : OFFLINE_CALL_MS;
+      const callMs = Math.min(ceiling, Math.max(MIN_CALL_BUDGET_MS, budget()));
       try {
         const res = await client.models.generateContent({
         model,

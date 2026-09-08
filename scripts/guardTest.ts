@@ -370,7 +370,7 @@ function fakeTrait(
   return {
     id: `thumb:${key}`,
     trait: key,
-    label: key === "high_contrast" ? "High colour contrast / bold saturated colours" : key,
+    label: key === "high_contrast" ? "High colour contrast / bold saturated colours" : `label for ${key}`,
     videoCount: n,
     medianIndex: 1 + lift / 100,
     liftPct: lift,
@@ -439,6 +439,23 @@ function testThumbnailWording() {
       okStrength && okWording && okHedge
         ? `strength=${r.strength}`
         : `strength=${r.strength} imperative=${hasImperative} hedged=${HEDGES.test(r.guidance)} :: ${r.guidance.slice(0, 90)}`,
+    );
+  }
+
+  // Every trait must produce grammatical English, not just the ones whose label
+  // happens to be clause-shaped. Three of five were broken: the sentence
+  // "Thumbnails where <label> run ..." has no verb when the label is a noun
+  // phrase, e.g. "Thumbnails where three or more competing focal points run".
+  for (const key of ["face", "text_overlay", "high_contrast", "cluttered", "screenshot"]) {
+    const r = summariseTraits([fakeTrait(key, 6, 40, "medium")], 16);
+    const sentence = r.guidance;
+    const clause = sentence.slice(sentence.indexOf("Thumbnails where") + 17, sentence.indexOf(" run "));
+    // A clause needs a verb. Every trait phrasing here contains one of these.
+    const hasVerb = /\b(is|are|there are|overlaid|visible)\b/.test(clause);
+    check(
+      `trait "${key}" reads as a sentence`,
+      hasVerb && !/\bui\b/.test(sentence),
+      hasVerb ? (/\bui\b/.test(sentence) ? "acronym lower-cased to 'ui'" : "") : `no verb in clause: "${clause}"`,
     );
   }
 

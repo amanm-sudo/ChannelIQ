@@ -48,14 +48,57 @@ import { GEMINI_MODEL_CANDIDATES, PRIMARY_MODEL, hasLlmKey, isModelAvailabilityE
 const MAX_SAMPLE = 16;
 const IMAGE_TIMEOUT_MS = 6_000;
 
-/** Traits we ask the vision model to detect. Kept small, visual and objective. */
+/**
+ * Traits we ask the vision model to detect. Kept small, visual and objective.
+ *
+ * Each has TWO forms, and the split is not redundant:
+ *
+ *   label  — a noun phrase, for chart rows and table cells
+ *   clause — a full clause, for the sentence "Thumbnails where <clause> run ..."
+ *
+ * Interpolating the label into that sentence produced broken English for three
+ * of the five traits, because a noun phrase has no verb: "Thumbnails where three
+ * or more competing focal points run +252%". Lower-casing the label also
+ * destroyed acronyms, turning "UI capture" into "ui capture".
+ */
 const TRAITS = [
-  { key: "face", label: "A human face is visible" },
-  { key: "text_overlay", label: "Large text is overlaid on the thumbnail" },
-  { key: "high_contrast", label: "High colour contrast / bold saturated colours" },
-  { key: "cluttered", label: "Three or more competing focal points (cluttered)" },
-  { key: "screenshot", label: "Mostly a screenshot or UI capture" },
+  {
+    key: "face",
+    label: "A human face is visible",
+    clause: "a human face is visible",
+  },
+  {
+    key: "text_overlay",
+    label: "Large text is overlaid on the thumbnail",
+    clause: "large text is overlaid on the image",
+  },
+  {
+    key: "high_contrast",
+    label: "High colour contrast / bold saturated colours",
+    clause: "the colours are high-contrast or boldly saturated",
+  },
+  {
+    key: "cluttered",
+    label: "Three or more competing focal points (cluttered)",
+    clause: "there are three or more competing focal points",
+  },
+  {
+    key: "screenshot",
+    label: "Mostly a screenshot or UI capture",
+    clause: "the image is mostly a screenshot or UI capture",
+  },
 ] as const;
+
+/**
+ * Sentence form for a trait, looked up by key.
+ *
+ * Resolved from the key rather than carried on the segment so that
+ * ThumbnailTraitSegment stays a pure statistical record with no presentation
+ * concerns in it.
+ */
+function traitClause(trait: string, fallbackLabel: string): string {
+  return TRAITS.find((t) => t.key === trait)?.clause ?? fallbackLabel.toLowerCase();
+}
 
 type TraitKey = (typeof TRAITS)[number]["key"];
 
@@ -316,7 +359,7 @@ export function summariseTraits(
       traits,
       strength: "directive",
       guidance:
-        `Thumbnails where ${directive.label.toLowerCase()} run ${formatPct(directive.liftPct)} against the rest of the sampled set ` +
+        `Thumbnails where ${traitClause(directive.trait, directive.label)} run ${formatPct(directive.liftPct)} against the rest of the sampled set ` +
         `(${directive.videoCount} of ${sampled} thumbnails, ${directive.confidence} confidence) — ` +
         `${directive.liftPct > 0 ? "lean into it" : "cut it"}.`,
     };
@@ -327,7 +370,7 @@ export function summariseTraits(
       traits,
       strength: "tentative",
       guidance:
-        `Thumbnails where ${tentative.label.toLowerCase()} run ${formatPct(tentative.liftPct)} against the rest of the sampled set, ` +
+        `Thumbnails where ${traitClause(tentative.trait, tentative.label)} run ${formatPct(tentative.liftPct)} against the rest of the sampled set, ` +
         `but only ${tentative.videoCount} of ${sampled} sampled thumbnails back that and it does not clear the confidence bar. ` +
         `Worth testing deliberately across your next few uploads rather than treating as a rule.`,
     };
